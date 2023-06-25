@@ -1,0 +1,53 @@
+pipeline {
+    agent any
+    
+    tools {
+        maven "Maven3"
+    }
+    
+    environment {
+        registry = '716615972355.dkr.ecr.eu-central-1.amazonaws.com/vitcase-ecr'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/atasen19/springboot-app-main']])
+            }
+        }
+        
+        stage('Build Jar') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Build Image') {
+            steps {
+                script {
+                    dockerImage = docker.build registry
+                }
+            }
+        }
+        
+        stage('Push Image to ECR'){
+            steps {
+                script {
+                    sh 'aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 716615972355.dkr.ecr.eu-central-1.amazonaws.com'
+                    sh 'docker push 716615972355.dkr.ecr.eu-central-1.amazonaws.com/vitcase-ecr'
+                } 
+            }
+        }
+        
+        stage('K8S Deploy'){
+            steps {
+                script {
+                    withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'K8S', namespace: '', restrictKubeConfigAccess: false, serverUrl: '') {
+                        sh 'kubectl apply -f eks-deploy-k8s.yaml'
+                        sh 'kubectl apply -f eks-service-k8s.yaml'
+                    }
+                }
+            }
+        }
+    }
+}
